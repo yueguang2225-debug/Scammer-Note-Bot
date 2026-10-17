@@ -1,14 +1,26 @@
 import json
 import os
+from threading import Thread
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
+
+# Render အတွက် Flask Web Server (Port ဖွင့်ပေးရန်အတွက်)
+app_web = Flask('')
+
+@app_web.route('/')
+def home():
+    return "Bot is running and alive!"
+
+def run_web():
+    port = int(os.environ.get('PORT', 8080))
+    app_web.run(host='0.0.0.0', port=port)
 
 # ဖိုင်များအတွက် Path သတ်မှတ်ခြင်း
 RESPONSES_FILE = "responses.json"
 USERS_FILE = "users.json"
 ADMIN_ID = 8012437507  # သင့်ရဲ့ Admin ID
 
-# အချက်အလက်များ တင်ယူရန်
 def load_data(filename):
     if os.path.exists(filename):
         with open(filename, "r", encoding="utf-8") as f:
@@ -18,7 +30,6 @@ def load_data(filename):
                 return {}
     return {}
 
-# အချက်အလက်များ သိမ်းဆည်းရန်
 def save_data(filename, data):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -86,7 +97,7 @@ async def add_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     save_data(RESPONSES_FILE, responses)
     await update.message.reply_text(f"✅ '{keyword}' မေးခွန်းနှင့် အဖြေကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
 
-# Admin အတွクト မလိုတော့သော Keyword များကို ဖျက်ရန် (!del keyword)
+# Admin အတွက် မလိုတော့သော Keyword များကို ဖျက်ရန် (!del keyword)
 async def delete_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -97,7 +108,7 @@ async def delete_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyword = text[len("!del"):].strip().lower()
 
     if not keyword:
-        await update.message.reply_text("⚠ ဖျက်လိုသည့် keyword ကို ထည့်ပါ။ ဥပမာ - `!del ငွေသွင်းအဆင့် return`", parse_mode="Markdown")
+        await update.message.reply_text("⚠ ဖျက်လိုသည့် keyword ကို ထည့်ပါ။ ဥပမာ - `!del keyword`", parse_mode="Markdown")
         return
 
     if keyword in responses:
@@ -165,7 +176,7 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             fail_count += 1
 
-    await update.message.reply_text(f"✅ ပို့ပြီးပါပြီ!\n- အောင်မြင်သူ: {success_count} ဦး\n- မအောင်မြင်သူ (Bot ကို Block ထားသူများ): {fail_count} ဦး")
+    await update.message.reply_text(f"✅ ပို့ပြီးပါပြီ!\n- အောင်မြင်သူ: {success_count} ဦး\n- မအောင်မြင်သူ: {fail_count} ဦး")
 
 # ပုံ သို့မဟုတ် စာသားဖြင့် မေးခွန်းများကို ပြန်ဖြေပေးမည့် Handler
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,6 +197,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
 def main():
+    # Flask ဝဘ်ဆာဗာကို Background Thread ဖြင့် စတင်ခြင်း (Render Port ပြဿနာကို ဖြေရှင်းရန်)
+    t = Thread(target=run_web)
+    t.daemon = True
+    t.start()
+
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
         print("Error: BOT_TOKEN environment variable not found!")
