@@ -1,161 +1,191 @@
-import logging
 import json
 import os
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
 
-# Admin ရဲ့ Telegram User ID
-ADMIN_ID = 8012437507
-
-# ဒေတာများ သိမ်းဆည်းမည့် JSON ဖိုင်များ
+# ဖိုင်များအတွက် Path သတ်မှတ်ခြင်း
+RESPONSES_FILE = "responses.json"
 USERS_FILE = "users.json"
-DATA_FILE = "responses.json"
+ADMIN_ID = 8012437507  # သင့်ရဲ့ Admin ID
 
-# Logging setup
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
-def load_json(filename, default_val):
-    """JSON ဖိုင်မှ ဒေတာများ ဖတ်ယူခြင်း"""
+# အချက်အလက်များ တင်ယူရန်
+def load_data(filename):
     if os.path.exists(filename):
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
+        with open(filename, "r", encoding="utf-8") as f:
+            try:
                 return json.load(f)
-        except Exception:
-            return default_val
-    return default_val
+            except json.JSONDecodeError:
+                return {}
+    return {}
 
-def save_json(filename, data):
-    """JSON ဖိုင်ထဲသို့ ဒေတာများ သိမ်းဆည်းခြင်း"""
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        logging.error(f"Error saving {filename}: {e}")
+# အချက်အလက်များ သိမ်းဆည်းရန်
+def save_data(filename, data):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-def load_users():
-    return set(load_json(USERS_FILE, []))
+responses = load_data(RESPONSES_FILE)
+users = load_data(USERS_FILE)
 
-def save_users(users):
-    save_json(USERS_FILE, list(users))
-
-def track_user(user_id):
-    """User ID အသစ်များကို မှတ်တမ်းတင်ခြင်း"""
-    users = load_users()
-    if user_id not in users:
-        users.add(user_id)
-        save_users(users)
-
-def load_responses():
-    """မေးခွန်းနှင့် အဖြေများကို ဖတ်ယူခြင်း"""
-    default_data = {
-        "ငွေသွင်းအဆင့်": "💳 **ငွေသွင်းရမည့် အဆင့်များ:**\n\n၁။ KPay / Wave နံပါတ်သို့ ငွေလွှဲပါ။\n၂။ ငွေလွှဲစလစ် (Screenshot) ကို ပို့ပေးပါ။",
-        "စာရင်းသွင်းအဆင့်": "📝 **စာရင်းသွင်းရမည့် အဆင့်များ:**\n\n၁။ အမည်နှင့် ဖုန်းနံပါတ် ပေးပို့ပါ။\n၂။ စာရင်းသွင်းမှု အတည်ပြုပေးပါမည်။"
-    }
-    return load_json(DATA_FILE, default_data)
-
-def save_responses(data):
-    save_json(DATA_FILE, data)
-
-
+# /start အမိန့်အတွက်
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/start command လက်ခံခြင်း"""
-    user_id = update.effective_user.id
-    track_user(user_id)
+    user = update.effective_user
+    user_id_str = str(user.id)
     
+    # User အသစ်ဖြစ်ပါက users.json ထဲသို့ မှတ်သားမည်
+    if user_id_str not in users:
+        users[user_id_str] = {
+            "username": user.username,
+            "first_name": user.first_name
+        }
+        save_data(USERS_FILE, users)
+        
     await update.message.reply_text(
         "မင်္ဂလာပါ ခင်ဗျာ! 🙏\n\n"
-        "ဤ Bot မှ သိရှိလိုသည်များကို အလိုအလျောက် ပြန်လည်ဖြေကြားပေးပါမည်။\n"
+        "ဤ Bot မှ သိရှိလိုသည်များကို အလိုအလျောက် ပြန်လည်ဖြေကြားပေးပါမည်။ "
         "သိလိုသည့် မေးခွန်းများကို ရိုက်ပို့နိုင်ပါတယ် ခင်ဗျာ။"
     )
 
+# Admin အတွက် ပုံပါသော သို့မဟုတ် စာသားသီးသန့် FAQ အသစ်ထည့်ရန် (!add keyword | ဖြေမည့်စာသား)
 async def add_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin က Chat ထဲကနေ မေးခွန်းနှင့် အဖြေအသစ် ထည့်ရန်"""
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
-        await update.message.reply_text("ဒီ command ကို Admin သာ အသုံးပြုနိုင်ပါတယ် ခင်ဗျာ။")
+        await update.message.reply_text("⚠ ဤအမိန့်ကို Admin သာ အသုံးပြုနိုင်ပါသည်။")
         return
 
-    text = update.message.text[len("!add"):].strip()
-    if ":" not in text:
-        await update.message.reply_text("ပုံစံ မှားယွင်းနေပါသည်။ ဥပမာ - `!add မေးခွန်း: အဖြေစာသား` ဟု ပို့ပါ ခင်ဗျာ။")
-        return
-
-    keyword, response_text = text.split(":", 1)
-    keyword = keyword.strip()
-    response_text = response_text.strip()
-
-    responses = load_responses()
-    responses[keyword] = response_text
-    save_responses(responses)
-
-    await update.message.reply_text(f"✅ အောင်မြင်ပါပြီ! **'{keyword}'** အတွက် အဖြေစာသားကို သိမ်းဆည်းပြီးပါပြီ။")
-
-async def list_responses(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin က လက်ရှိ သိမ်းဆည်းထားသော အချက်အလက်များ ကြည့်ရန်"""
-    user_id = update.effective_user.id
-    if user_id != ADMIN_ID:
-        return
-
-    responses = load_responses()
-    if not responses:
-        await update.message.reply_text("လက်ရှိ မည်သည့် အချက်အလက်မှ သိမ်းဆည်းထားခြင်း မရှိသေးပါ။")
-        return
-
-    msg = "📋 **လက်ရှိ သိမ်းဆည်းထားသော အချက်အလက်များ:**\n\n"
-    for k, v in responses.items():
-        msg += f"• **{k}**:\n{v}\n\n"
-    await update.message.reply_text(msg)
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """အသုံးပြုသူများ ပို့လိုက်သော စာများကို စစ်ဆေးပြီး အကြောင်းပြန်ပေးခြင်း"""
-    user_id = update.effective_user.id
-    track_user(user_id)
+    text = update.message.text
+    command_content = text[len("!add"):].strip()
     
-    text = update.message.text.strip()
-    responses = load_responses()
+    # ပုံပါလာခြင်း ရှိမရှိ စစ်ဆေးမည်
+    if update.message.photo:
+        photo_file_id = update.message.photo[-1].file_id
+        parts = command_content.split(":", 1)
+        if len(parts) < 2:
+            await update.message.reply_text("⚠ ပုံစံမမှန်ပါ။ ဥပမာ - `!add keyword: အဖြေစာသား` ဟု ပုံနှင့်အတူ caption ရေးပို့ပါ။")
+            return
+        keyword = parts[0].strip().lower()
+        reply_text = parts[1].strip()
+        
+        responses[keyword] = {
+            "text": reply_text,
+            "photo": photo_file_id
+        }
+        save_data(RESPONSES_FILE, responses)
+        await update.message.reply_text(f"✅ ပုံပါသော '{keyword}' မေးခွန်းနှင့် အဖြေကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
+        return
 
-    matched = False
-    for keyword, response_text in responses.items():
-        if keyword in text:
-            await update.message.reply_text(response_text)
-            matched = True
-            break
+    parts = command_content.split(":", 1)
+    if len(parts) < 2:
+        await update.message.reply_text("⚠ ပုံစံမမှန်ပါ။ ဥပမာ - `!add keyword: အဖြေစာသား`")
+        return
 
-    if not matched:
-        await update.message.reply_text(
-            "အချက်အလက်ကို နားမလည်ပါ ခင်ဗျာ။ တိကျသော စာသားများကိုသာ ရိုက်ပို့ပေးပါ ခင်ဗျာ။"
-        )
+    keyword = parts[0].strip().lower()
+    reply_text = parts[1].strip()
 
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin က သုံးစွဲသူ စာရင်း အရေအတွက် ကြည့်ရန်"""
+    responses[keyword] = {
+        "text": reply_text,
+        "photo": None
+    }
+    save_data(RESPONSES_FILE, responses)
+    await update.message.reply_text(f"✅ '{keyword}' မေးခွန်းနှင့် အဖြေကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
+
+# /list အမိန့် (သိမ်းထားသမျှ FAQ များကို ကြည့်ရန်)
+async def list_responses(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id == ADMIN_ID:
-        users = load_users()
-        await update.message.reply_text(f"📊 **Bot သုံးစွဲသူ စာရင်းအချက်အလက်**\n\nစုစုပေါင်း သုံးစွဲသူ: **{len(users)}** ယောက် ရှိပါသည်။")
-    else:
-        await update.message.reply_text("ဒီ command ကို Admin ပဲ သုံးခွင့်ရှိပါတယ် ခင်ဗျာ။")
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⚠ ဤအမိန့်ကို Admin သာ အသုံးပြုနိုင်ပါသည်။")
+        return
 
-if __name__ == "__main__":
+    if not responses:
+        await update.message.reply_text("📭 လက်ရှိတွင် သိမ်းဆည်းထားသော အချက်အလက် မရှိသေးပါ။")
+        return
+
+    msg = "📋 **သိမ်းဆည်းထားသော မေးခွန်းများစာရင်း:**\n\n"
+    for idx, (kw, val) in enumerate(responses.items(), 1):
+        has_photo = " [📸 ပုံပါရှိသည်]" if val.get("photo") else ""
+        msg += f"{idx}. `{kw}`{has_photo}\n"
+    
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+# /stats အမိန့် (Bot သုံးစွဲသူဦးရေ စစ်ဆေးရန်)
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⚠ ဤအမိန့်ကို Admin သာ အသုံးပြုနိုင်ပါသည်။")
+        return
+
+    total_users = len(users)
+    await update.message.reply_text(f"📊 လက်ရှိ Bot အသုံးပြုနေသူ စုစုပေါင်း: **{total_users}** ဦး ရှိပါသည်။", parse_mode="Markdown")
+
+# /broadcast အမိန့် (သုံးစွဲသူအားလုံးဆီသို့ စာပို့ရန်)
+async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⚠ ဤအမိန့်ကို Admin သာ အသုံးပြုနိုင်ပါသည်။")
+        return
+
+    # ပေးပို့လိုသော စာသားကို ယူမည် (ဥပမာ - /broadcast မင်္ဂလာပါ...)
+    text = update.message.text
+    broadcast_text = text[len("/broadcast"):].strip()
+    
+    if not broadcast_text:
+        await update.message.reply_text("⚠ ပို့လိုသည့် စာသားကို ထည့်ပါ။ ဥပမာ - `/broadcast အရေးကြီးကြေညာချက်...`", parse_mode="Markdown")
+        return
+
+    if not users:
+        await update.message.reply_text("📭 Bot ကို အသုံးပြုထားသူ လုံးဝ မရှိသေးပါ။")
+        return
+
+    success_count = 0
+    fail_count = 0
+
+    await update.message.reply_text(f"📤 စုစုပေါင်း သုံးစွဲသူ {len(users)} ဦးဆီသို့ စာစတင်ပို့နေပါပြီ...")
+
+    for uid_str in users.keys():
+        try:
+            await context.bot.send_message(chat_id=int(uid_str), text=broadcast_text)
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+
+    await update.message.reply_text(f"✅ ပို့ပြီးပါပြီ!\n- အောင်မြင်သူ: {success_count} ဦး\n- မအောင်မြင်သူ (Bot ကို Block ထားသူများ): {fail_count} ဦး")
+
+# ပုံ သို့မဟုတ် စာသားဖြင့် မေးခွန်းများကို ပြန်ဖြေပေးမည့် Handler
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+
+    user_text = update.message.text.lower()
+    
+    for keyword, data in responses.items():
+        if keyword in user_text:
+            reply_text = data.get("text")
+            photo_id = data.get("photo")
+            
+            if photo_id:
+                await update.message.reply_photo(photo=photo_id, caption=reply_text)
+            else:
+                await update.message.reply_text(reply_text)
+            return
+
+def main():
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
-        raise ValueError("BOT_TOKEN မတွေ့ပါ။ Environment Variables ထဲတွင် ထည့်သွင်းပေးပါ။")
-        
-    app = ApplicationBuilder().token(TOKEN).connect_timeout(30).read_timeout(30).write_timeout(30).build()
+        print("Error: BOT_TOKEN environment variable not found!")
+        return
 
-    # Handlers များ ထည့်သွင်းခြင်း
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # Handlers များ သတ်မှတ်ခြင်း
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("list", list_responses))
-    app.add_handler(MessageHandler(filters.Regex("^!add"), add_response))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("broadcast", broadcast_message))  # Broadcast အမိန့် အသစ်ထည့်သွင်းခြင်း
+    
+    app.add_handler(MessageHandler(filters.Regex(r"^!add") & filters.User(user_id=ADMIN_ID), add_response))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
+    print("Bot is running...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
