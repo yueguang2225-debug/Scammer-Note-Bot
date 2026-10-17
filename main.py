@@ -31,7 +31,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id_str = str(user.id)
     
-    # User အသစ်ဖြစ်ပါက users.json ထဲသို့ မှတ်သားမည်
     if user_id_str not in users:
         users[user_id_str] = {
             "username": user.username,
@@ -45,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "သိလိုသည့် မေးခွန်းများကို ရိုက်ပို့နိုင်ပါတယ် ခင်ဗျာ။"
     )
 
-# Admin အတွက် ပုံပါသော သို့မဟုတ် စာသားသီးသန့် FAQ အသစ်ထည့်ရန် (!add keyword | ဖြေမည့်စာသား)
+# Admin အတွက် ပုံပါသော သို့မဟုတ် စာသားသီးသန့် FAQ အသစ်ထည့်ရန် (!add keyword: အဖြေ)
 async def add_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id != ADMIN_ID:
@@ -55,7 +54,6 @@ async def add_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     command_content = text[len("!add"):].strip()
     
-    # ပုံပါလာခြင်း ရှိမရှိ စစ်ဆေးမည်
     if update.message.photo:
         photo_file_id = update.message.photo[-1].file_id
         parts = command_content.split(":", 1)
@@ -87,6 +85,27 @@ async def add_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
     save_data(RESPONSES_FILE, responses)
     await update.message.reply_text(f"✅ '{keyword}' မေးခွန်းနှင့် အဖြေကို အောင်မြင်စွာ သိမ်းဆည်းပြီးပါပြီ!")
+
+# Admin အတွクト မလိုတော့သော Keyword များကို ဖျက်ရန် (!del keyword)
+async def delete_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("⚠ ဤအမိန့်ကို Admin သာ အသုံးပြုနိုင်ပါသည်။")
+        return
+
+    text = update.message.text
+    keyword = text[len("!del"):].strip().lower()
+
+    if not keyword:
+        await update.message.reply_text("⚠ ဖျက်လိုသည့် keyword ကို ထည့်ပါ။ ဥပမာ - `!del ငွေသွင်းအဆင့် return`", parse_mode="Markdown")
+        return
+
+    if keyword in responses:
+        del responses[keyword]
+        save_data(RESPONSES_FILE, responses)
+        await update.message.reply_text(f"🗑 '{keyword}' မေးခွန်းနှင့် အဖြေကို အောင်မြင်စွာ ဖျက်ပစ်လိုက်ပါပြီ။")
+    else:
+        await update.message.reply_text(f"❌ '{keyword}' ဆိုသော keyword ကို မတွေ့ရှိရပါ။ `/list` ဖြင့် စာရင်းကို အရင်စစ်ဆေးပါ။", parse_mode="Markdown")
 
 # /list အမိန့် (သိမ်းထားသမျှ FAQ များကို ကြည့်ရန်)
 async def list_responses(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,7 +142,6 @@ async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠ ဤအမိန့်ကို Admin သာ အသုံးပြုနိုင်ပါသည်။")
         return
 
-    # ပေးပို့လိုသော စာသားကို ယူမည် (ဥပမာ - /broadcast မင်္ဂလာပါ...)
     text = update.message.text
     broadcast_text = text[len("/broadcast"):].strip()
     
@@ -179,9 +197,12 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("list", list_responses))
     app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("broadcast", broadcast_message))  # Broadcast အမိန့် အသစ်ထည့်သွင်းခြင်း
+    app.add_handler(CommandHandler("broadcast", broadcast_message))
     
+    # Admin အမိန့်များအတွက် Handlers
     app.add_handler(MessageHandler(filters.Regex(r"^!add") & filters.User(user_id=ADMIN_ID), add_response))
+    app.add_handler(MessageHandler(filters.Regex(r"^!del") & filters.User(user_id=ADMIN_ID), delete_response))
+    
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     print("Bot is running...")
